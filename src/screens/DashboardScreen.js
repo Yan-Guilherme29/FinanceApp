@@ -1,9 +1,10 @@
-import { useEffect } from 'react';
+import { useCallback } from 'react';
 import {
     View, Text, ScrollView, StyleSheet,
     TouchableOpacity, SafeAreaView
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { PieChart } from 'react-native-gifted-charts';
 import useStore from '../store/useStore';
 
@@ -34,7 +35,11 @@ export default function DashboardScreen() {
         savingGoalPercent, currency, loadData, setMonth, getSavingTarget
     } = useStore();
 
-    useEffect(() => { loadData(); }, []);
+    useFocusEffect(
+        useCallback(() => {
+            loadData();
+        }, [currentYear, currentMonth])
+    );
 
     const savingTarget = getSavingTarget();
     const saved = summary.balance > 0 ? Math.min(summary.balance, savingTarget) : 0;
@@ -62,13 +67,11 @@ export default function DashboardScreen() {
         <SafeAreaView style={styles.safe}>
             <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
 
-                {/* Header */}
                 <View style={styles.header}>
                     <Text style={styles.headerTitle}>💰 FinanceApp</Text>
-                    <Text style={styles.headerSub}>Olá! Aqui está seu resumo</Text>
+                    <Text style={styles.headerSub}>Olá! Aqui está seu resumo mensal!</Text>
                 </View>
 
-                {/* Navegação de mês */}
                 <View style={styles.monthNav}>
                     <TouchableOpacity onPress={prevMonth} style={styles.monthBtn}>
                         <Ionicons name="chevron-back" size={20} color={COLORS.primary} />
@@ -81,7 +84,6 @@ export default function DashboardScreen() {
                     </TouchableOpacity>
                 </View>
 
-                {/* Cards de resumo */}
                 <View style={styles.cardsRow}>
                     <View style={[styles.card, { borderLeftColor: COLORS.income }]}>
                         <Text style={styles.cardLabel}>Ganhos</Text>
@@ -97,7 +99,6 @@ export default function DashboardScreen() {
                     </View>
                 </View>
 
-                {/* Saldo */}
                 <View style={styles.balanceCard}>
                     <Text style={styles.balanceLabel}>Saldo do mês</Text>
                     <Text style={[styles.balanceValue, { color: summary.balance >= 0 ? COLORS.income : COLORS.expense }]}>
@@ -105,7 +106,6 @@ export default function DashboardScreen() {
                     </Text>
                 </View>
 
-                {/* Meta de poupança */}
                 <View style={styles.savingCard}>
                     <View style={styles.savingHeader}>
                         <Text style={styles.savingTitle}>🎯 Meta de poupança ({savingGoalPercent}%)</Text>
@@ -123,7 +123,6 @@ export default function DashboardScreen() {
                     </Text>
                 </View>
 
-                {/* Gráfico de categorias */}
                 {pieData.length > 0 && (
                     <View style={styles.chartCard}>
                         <Text style={styles.chartTitle}>Gastos por categoria</Text>
@@ -138,7 +137,6 @@ export default function DashboardScreen() {
                                 )}
                             />
                         </View>
-                        {/* Legenda */}
                         <View style={styles.legend}>
                             {pieData.map((item, index) => (
                                 <View key={index} style={styles.legendItem}>

@@ -1,10 +1,10 @@
 import { create } from 'zustand';
 import {
-  addTransaction,
+  addTransaction as dbAddTransaction,
   getTransactions,
   getMonthlySummary,
   getExpensesByCategory,
-  deleteTransaction,
+  deleteTransaction as dbDeleteTransaction,
 } from '../database/database';
 
 const today = new Date();
@@ -20,25 +20,53 @@ const useStore = create((set, get) => ({
 
   loadData: async () => {
     const { currentYear, currentMonth } = get();
-    const transactions = await getTransactions();
-    const summary = await getMonthlySummary(currentYear, currentMonth);
-    const expensesByCategory = await getExpensesByCategory(currentYear, currentMonth);
-    set({ transactions, summary, expensesByCategory });
+    try {
+      const transactions = await getTransactions();
+      const summary = await getMonthlySummary(currentYear, currentMonth);
+      const expensesByCategory = await getExpensesByCategory(currentYear, currentMonth);
+      set({ transactions, summary, expensesByCategory });
+    } catch (e) {
+      console.log('Erro ao carregar dados:', e);
+    }
   },
 
   addTransaction: async (type, amount, category, description, currency, date) => {
-    await addTransaction(type, amount, category, description, currency, date);
-    await get().loadData();
+    try {
+      await dbAddTransaction(type, amount, category, description, currency, date);
+      // Aguarda o loadData terminar antes de atualizar o estado
+      const { currentYear, currentMonth } = get();
+      const transactions = await getTransactions();
+      const summary = await getMonthlySummary(currentYear, currentMonth);
+      const expensesByCategory = await getExpensesByCategory(currentYear, currentMonth);
+      set({ transactions, summary, expensesByCategory });
+    } catch (e) {
+      console.log('Erro ao adicionar transação:', e);
+    }
   },
 
   deleteTransaction: async (id) => {
-    await deleteTransaction(id);
-    await get().loadData();
+    try {
+      await dbDeleteTransaction(id);
+      const { currentYear, currentMonth } = get();
+      const transactions = await getTransactions();
+      const summary = await getMonthlySummary(currentYear, currentMonth);
+      const expensesByCategory = await getExpensesByCategory(currentYear, currentMonth);
+      set({ transactions, summary, expensesByCategory });
+    } catch (e) {
+      console.log('Erro ao deletar transação:', e);
+    }
   },
 
-  setMonth: (year, month) => {
+  setMonth: async (year, month) => {
     set({ currentYear: year, currentMonth: month });
-    get().loadData();
+    try {
+      const transactions = await getTransactions();
+      const summary = await getMonthlySummary(year, month);
+      const expensesByCategory = await getExpensesByCategory(year, month);
+      set({ transactions, summary, expensesByCategory });
+    } catch (e) {
+      console.log('Erro ao mudar mês:', e);
+    }
   },
 
   setSavingGoal: (percent) => set({ savingGoalPercent: percent }),

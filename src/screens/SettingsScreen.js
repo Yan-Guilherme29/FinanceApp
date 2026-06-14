@@ -1,12 +1,14 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity,
-    SafeAreaView, ScrollView, Alert, Switch
+    SafeAreaView, ScrollView, Alert
 } from 'react-native';
 import Slider from '@react-native-community/slider';
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFocusEffect } from '@react-navigation/native';
+import * as SecureStore from 'expo-secure-store';
 import useStore from '../store/useStore';
+import { getCustomCategories, deleteCustomCategory, clearAllData } from '../database/database';
 
 const COLORS = {
     primary: '#6C63FF',
@@ -27,13 +29,43 @@ const CURRENCIES = [
 ];
 
 export default function SettingsScreen() {
-    const { savingGoalPercent, currency, setSavingGoal, setCurrency } = useStore();
+    const { savingGoalPercent, currency, setSavingGoal, setCurrency, loadData } = useStore();
     const [sliderValue, setSliderValue] = useState(savingGoalPercent);
+    const [customCategories, setCustomCategories] = useState({ expense: [], income: [] });
+
+    useFocusEffect(
+        useCallback(() => {
+            loadCustomCategories();
+        }, [])
+    );
+
+    const loadCustomCategories = async () => {
+        const cats = await getCustomCategories();
+        setCustomCategories(cats);
+    };
 
     const handleSavingGoalChange = (value) => {
         const rounded = Math.round(value);
         setSliderValue(rounded);
         setSavingGoal(rounded);
+    };
+
+    const handleDeleteCategory = (type, id, name) => {
+        Alert.alert(
+            'Excluir categoria',
+            `Quer excluir a categoria "${name}"?`,
+            [
+                { text: 'Cancelar', style: 'cancel' },
+                {
+                    text: 'Excluir',
+                    style: 'destructive',
+                    onPress: async () => {
+                        await deleteCustomCategory(type, id);
+                        await loadCustomCategories();
+                    },
+                },
+            ]
+        );
     };
 
     const handleClearData = () => {
@@ -46,14 +78,20 @@ export default function SettingsScreen() {
                     text: 'Apagar tudo',
                     style: 'destructive',
                     onPress: async () => {
-                        await AsyncStorage.removeItem('transactions');
-                        useStore.getState().loadData();
-                        Alert.alert('✅ Pronto', 'Todos os dados foram apagados.');
+                        try {
+                            await clearAllData();
+                            await loadData();
+                            Alert.alert('✅ Pronto', 'Todos os dados foram apagados.');
+                        } catch (e) {
+                            Alert.alert('Erro', 'Não foi possível apagar os dados.');
+                        }
                     },
                 },
             ]
         );
     };
+
+    const hasCustomCategories = customCategories.expense.length > 0 || customCategories.income.length > 0;
 
     return (
         <SafeAreaView style={styles.safe}>
@@ -91,14 +129,10 @@ export default function SettingsScreen() {
                         </View>
                         <View style={styles.goalHintBox}>
                             <Text style={styles.goalHint}>
-                                {sliderValue === 0
-                                    ? 'Sem meta definida'
-                                    : sliderValue <= 10
-                                        ? '👍 Começo sólido!'
-                                        : sliderValue <= 20
-                                            ? '💪 Ótima meta!'
-                                            : sliderValue <= 30
-                                                ? '🔥 Disciplina alta!'
+                                {sliderValue === 0 ? 'Sem meta definida'
+                                    : sliderValue <= 10 ? '👍 Começo sólido!'
+                                        : sliderValue <= 20 ? '💪 Ótima meta!'
+                                            : sliderValue <= 30 ? '🔥 Disciplina alta!'
                                                 : '🚀 Meta agressiva — você é fera!'}
                             </Text>
                         </View>
@@ -117,19 +151,50 @@ export default function SettingsScreen() {
                                     style={[styles.currencyBtn, currency === c.value && styles.currencyBtnActive]}
                                     onPress={() => setCurrency(c.value)}
                                 >
-                                    <Text style={[styles.currencyLabel, currency === c.value && { color: '#fff' }]}>
-                                        {c.label}
-                                    </Text>
-                                    {currency === c.value && (
-                                        <Ionicons name="checkmark-circle" size={16} color="#fff" />
-                                    )}
+                                    <Text style={[styles.currencyLabel, currency === c.value && { color: '#fff' }]}>{c.label}</Text>
+                                    {currency === c.value && <Ionicons name="checkmark-circle" size={16} color="#fff" />}
                                 </TouchableOpacity>
                             ))}
                         </View>
                     </View>
                 </View>
 
-                {/* Sobre o app */}
+                {/* Categorias personalizadas */}
+                {hasCustomCategories && (
+                    <View style={styles.section}>
+                        <Text style={styles.sectionTitle}>🏷️ Categorias personalizadas</Text>
+                        <View style={styles.card}>
+                            {customCategories.expense.length > 0 && (
+                                <>
+                                    <Text style={styles.catTypeLabel}>Gastos</Text>
+                                    {customCategories.expense.map(cat => (
+                                        <View key={cat.id} style={styles.catRow}>
+                                            <Text style={styles.catName}>{cat.emoji} {cat.name}</Text>
+                                            <TouchableOpacity onPress={() => handleDeleteCategory('expense', cat.id, cat.name)}>
+                                                <Ionicons name="trash-outline" size={18} color={COLORS.expense} />
+                                            </TouchableOpacity>
+                                        </View>
+                                    ))}
+                                </>
+                            )}
+                            {customCategories.income.length > 0 && (
+                                <>
+                                    <Text style={[styles.catTypeLabel, { marginTop: 12 }]}>Ganhos</Text>
+                                    {customCategories.income.map(cat => (
+                                        <View key={cat.id} style={styles.catRow}>
+                                            <Text style={styles.catName}>{cat.emoji} {cat.name}</Text>
+                                            <TouchableOpacity onPress={() => handleDeleteCategory('income', cat.id, cat.name)}>
+                                                <Ionicons name="trash-outline" size={18} color={COLORS.expense} />
+                                            </TouchableOpacity>
+                                        </View>
+                                    ))}
+                                </>
+                            )}
+                        </View>
+                    </View>
+                )}
+
+                {/* Sobre */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>ℹ️ Sobre</Text>
                     <View style={styles.card}>
@@ -186,6 +251,9 @@ const styles = StyleSheet.create({
     currencyBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 14, borderRadius: 10, backgroundColor: '#16162A', borderWidth: 1, borderColor: COLORS.cardBorder },
     currencyBtnActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
     currencyLabel: { fontSize: 15, color: COLORS.textSecondary },
+    catTypeLabel: { fontSize: 12, fontWeight: '600', color: COLORS.textSecondary, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8 },
+    catRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: COLORS.cardBorder },
+    catName: { fontSize: 15, color: COLORS.text },
     aboutRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 4 },
     separator: { height: 1, backgroundColor: COLORS.cardBorder, marginVertical: 8 },
     dangerBtn: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: COLORS.card, borderRadius: 14, padding: 16, borderWidth: 1, borderColor: COLORS.expense },
