@@ -2,8 +2,9 @@ import * as SecureStore from 'expo-secure-store';
 
 const TRANSACTIONS_KEY = 'financeapp_transactions';
 const CATEGORIES_KEY = 'financeapp_categories';
+const BUDGETS_KEY = 'financeapp_budgets';
 
-export function initDatabase() {}
+export function initDatabase() { }
 
 // ─── Transações ───────────────────────────────────────────
 
@@ -89,6 +90,31 @@ export async function deleteCustomCategory(type, id) {
   categories[type] = categories[type].filter(c => c.id !== id);
   await SecureStore.setItemAsync(CATEGORIES_KEY, JSON.stringify(categories));
 }
+
+// ─── Orçamentos ────────────────────────────────────────────
+
+export async function getBudgets() {
+  try {
+    const data = await SecureStore.getItemAsync(BUDGETS_KEY);
+    return data ? JSON.parse(data) : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+export async function setBudget(category, amount) {
+  const budgets = await getBudgets();
+  budgets[category] = amount;
+  await SecureStore.setItemAsync(BUDGETS_KEY, JSON.stringify(budgets));
+}
+
+export async function deleteBudget(category) {
+  const budgets = await getBudgets();
+  delete budgets[category];
+  await SecureStore.setItemAsync(BUDGETS_KEY, JSON.stringify(budgets));
+}
+
+// ─── Limpar dados ──────────────────────────────────────────
 
 export async function clearAllData() {
   await SecureStore.deleteItemAsync(TRANSACTIONS_KEY);

@@ -8,6 +8,7 @@ import { initDatabase } from './src/database/database';
 import DashboardScreen from './src/screens/DashboardScreen';
 import AddTransactionScreen from './src/screens/AddTransactionScreen';
 import HistoryScreen from './src/screens/HistoryScreen';
+import BudgetScreen from './src/screens/BudgetScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 
 const Tab = createBottomTabNavigator();
@@ -39,11 +40,13 @@ export default function App() {
           },
           tabBarActiveTintColor: COLORS.primary,
           tabBarInactiveTintColor: COLORS.inactive,
+          tabBarLabelStyle: { fontSize: 11 },
           tabBarIcon: ({ focused, color, size }) => {
             let iconName;
             if (route.name === 'Dashboard') iconName = focused ? 'home' : 'home-outline';
             else if (route.name === 'Adicionar') iconName = focused ? 'add-circle' : 'add-circle-outline';
             else if (route.name === 'Histórico') iconName = focused ? 'list' : 'list-outline';
+            else if (route.name === 'Orçamento') iconName = focused ? 'wallet' : 'wallet-outline';
             else if (route.name === 'Config') iconName = focused ? 'settings' : 'settings-outline';
             return <Ionicons name={iconName} size={size} color={color} />;
           },
@@ -52,6 +55,7 @@ export default function App() {
         <Tab.Screen name="Dashboard" component={DashboardScreen} />
         <Tab.Screen name="Adicionar" component={AddTransactionScreen} />
         <Tab.Screen name="Histórico" component={HistoryScreen} />
+        <Tab.Screen name="Orçamento" component={BudgetScreen} />
         <Tab.Screen name="Config" component={SettingsScreen} />
       </Tab.Navigator>
     </NavigationContainer>
