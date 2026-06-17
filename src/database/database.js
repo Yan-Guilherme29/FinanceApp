@@ -6,6 +6,57 @@ const BUDGETS_KEY = 'financeapp_budgets';
 
 export function initDatabase() { }
 
+// ─── Helpers de semana ─────────────────────────────────────
+
+// Retorna segunda-feira da semana de uma data
+export function getWeekStart(date = new Date()) {
+  const d = new Date(date);
+  const day = d.getDay(); // 0=dom, 1=seg...
+  const diff = day === 0 ? -6 : 1 - day; // ajusta para segunda
+  d.setDate(d.getDate() + diff);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+// Retorna domingo da semana
+export function getWeekEnd(date = new Date()) {
+  const start = getWeekStart(date);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+  end.setHours(23, 59, 59, 999);
+  return end;
+}
+
+// Formata data para string AAAA-MM-DD
+export function toDateString(date) {
+  return date.toISOString().split('T')[0];
+}
+
+// Retorna label da semana ex: "9 - 15 Jun"
+export function getWeekLabel(weekStart) {
+  const start = new Date(weekStart);
+  const end = new Date(start);
+  end.setDate(start.getDate() + 6);
+
+  const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+  const startDay = start.getDate();
+  const endDay = end.getDate();
+  const month = months[end.getMonth()];
+  const year = end.getFullYear();
+
+  if (start.getMonth() === end.getMonth()) {
+    return `${startDay} - ${endDay} ${month} ${year}`;
+  }
+  return `${startDay} ${months[start.getMonth()]} - ${endDay} ${month} ${year}`;
+}
+
+// Navega semanas: offset = -1 (anterior), +1 (próxima)
+export function offsetWeek(weekStart, offset) {
+  const d = new Date(weekStart);
+  d.setDate(d.getDate() + offset * 7);
+  return d;
+}
+
 // ─── Transações ───────────────────────────────────────────
 
 async function getAllTransactions() {
@@ -46,21 +97,26 @@ export async function deleteTransaction(id) {
   await saveTransactions(transactions.filter(t => t.id !== id));
 }
 
-export async function getMonthlySummary(year, month) {
+export async function getWeeklySummary(weekStart) {
   const transactions = await getAllTransactions();
-  const start = `${year}-${String(month).padStart(2, '0')}-01`;
-  const end = `${year}-${String(month).padStart(2, '0')}-31`;
+  const start = toDateString(getWeekStart(new Date(weekStart)));
+  const end = toDateString(getWeekEnd(new Date(weekStart)));
+
   const filtered = transactions.filter(t => t.date >= start && t.date <= end);
   const income = filtered.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
   const expense = filtered.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
   return { income, expense, balance: income - expense };
 }
 
-export async function getExpensesByCategory(year, month) {
+export async function getExpensesByCategory(weekStart) {
   const transactions = await getAllTransactions();
-  const start = `${year}-${String(month).padStart(2, '0')}-01`;
-  const end = `${year}-${String(month).padStart(2, '0')}-31`;
-  const filtered = transactions.filter(t => t.type === 'expense' && t.date >= start && t.date <= end);
+  const start = toDateString(getWeekStart(new Date(weekStart)));
+  const end = toDateString(getWeekEnd(new Date(weekStart)));
+
+  const filtered = transactions.filter(
+    t => t.type === 'expense' && t.date >= start && t.date <= end
+  );
+
   const grouped = {};
   filtered.forEach(t => { grouped[t.category] = (grouped[t.category] || 0) + t.amount; });
   return Object.entries(grouped).map(([category, total]) => ({ category, total })).sort((a, b) => b.total - a.total);
@@ -91,7 +147,7 @@ export async function deleteCustomCategory(type, id) {
   await SecureStore.setItemAsync(CATEGORIES_KEY, JSON.stringify(categories));
 }
 
-// ─── Orçamentos ────────────────────────────────────────────
+// ─── Orçamentos (fixo, vale toda semana) ──────────────────
 
 export async function getBudgets() {
   try {

@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { PieChart } from 'react-native-gifted-charts';
 import useStore from '../store/useStore';
+import { getWeekLabel } from '../database/database';
 
 const COLORS = {
     primary: '#6C63FF',
@@ -24,21 +25,16 @@ const CATEGORY_COLORS = [
     '#00BCD4', '#FF9800', '#E91E63', '#9C27B0'
 ];
 
-const MONTHS = [
-    'Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun',
-    'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'
-];
-
 export default function DashboardScreen() {
     const {
-        summary, expensesByCategory, currentYear, currentMonth,
-        savingGoalPercent, currency, loadData, setMonth, getSavingTarget
+        summary, expensesByCategory, currentWeekStart,
+        savingGoalPercent, currency, loadData, prevWeek, nextWeek, getSavingTarget
     } = useStore();
 
     useFocusEffect(
         useCallback(() => {
             loadData();
-        }, [currentYear, currentMonth])
+        }, [currentWeekStart])
     );
 
     const savingTarget = getSavingTarget();
@@ -51,16 +47,15 @@ export default function DashboardScreen() {
         label: item.category,
     }));
 
-    const prevMonth = () => {
-        if (currentMonth === 1) setMonth(currentYear - 1, 12);
-        else setMonth(currentYear, currentMonth - 1);
-    };
-
-    const nextMonth = () => {
+    // Verifica se é a semana atual (não pode avançar)
+    const isCurrentWeek = () => {
         const now = new Date();
-        if (currentYear === now.getFullYear() && currentMonth === now.getMonth() + 1) return;
-        if (currentMonth === 12) setMonth(currentYear + 1, 1);
-        else setMonth(currentYear, currentMonth + 1);
+        const nowDay = now.getDay();
+        const diff = nowDay === 0 ? -6 : 1 - nowDay;
+        const currentMonday = new Date(now);
+        currentMonday.setDate(now.getDate() + diff);
+        currentMonday.setHours(0, 0, 0, 0);
+        return new Date(currentWeekStart).toDateString() === currentMonday.toDateString();
     };
 
     return (
@@ -69,21 +64,25 @@ export default function DashboardScreen() {
 
                 <View style={styles.header}>
                     <Text style={styles.headerTitle}>💰 FinanceApp</Text>
-                    <Text style={styles.headerSub}>Olá! Aqui está seu resumo mensal!</Text>
+                    <Text style={styles.headerSub}>Resumo da semana</Text>
                 </View>
 
-                <View style={styles.monthNav}>
-                    <TouchableOpacity onPress={prevMonth} style={styles.monthBtn}>
+                {/* Navegação de semana */}
+                <View style={styles.weekNav}>
+                    <TouchableOpacity onPress={prevWeek} style={styles.weekBtn}>
                         <Ionicons name="chevron-back" size={20} color={COLORS.primary} />
                     </TouchableOpacity>
-                    <Text style={styles.monthText}>
-                        {MONTHS[currentMonth - 1]} {currentYear}
-                    </Text>
-                    <TouchableOpacity onPress={nextMonth} style={styles.monthBtn}>
+                    <Text style={styles.weekText}>{getWeekLabel(currentWeekStart)}</Text>
+                    <TouchableOpacity
+                        onPress={nextWeek}
+                        style={[styles.weekBtn, isCurrentWeek() && { opacity: 0.3 }]}
+                        disabled={isCurrentWeek()}
+                    >
                         <Ionicons name="chevron-forward" size={20} color={COLORS.primary} />
                     </TouchableOpacity>
                 </View>
 
+                {/* Cards ganhos/gastos */}
                 <View style={styles.cardsRow}>
                     <View style={[styles.card, { borderLeftColor: COLORS.income }]}>
                         <Text style={styles.cardLabel}>Ganhos</Text>
@@ -99,13 +98,15 @@ export default function DashboardScreen() {
                     </View>
                 </View>
 
+                {/* Saldo */}
                 <View style={styles.balanceCard}>
-                    <Text style={styles.balanceLabel}>Saldo do mês</Text>
+                    <Text style={styles.balanceLabel}>Saldo da semana</Text>
                     <Text style={[styles.balanceValue, { color: summary.balance >= 0 ? COLORS.income : COLORS.expense }]}>
                         {currency} {summary.balance.toFixed(2)}
                     </Text>
                 </View>
 
+                {/* Meta de poupança */}
                 <View style={styles.savingCard}>
                     <View style={styles.savingHeader}>
                         <Text style={styles.savingTitle}>🎯 Meta de poupança ({savingGoalPercent}%)</Text>
@@ -118,11 +119,12 @@ export default function DashboardScreen() {
                     </View>
                     <Text style={styles.savingHint}>
                         {savingProgress >= 100
-                            ? '🎉 Meta atingida esse mês!'
+                            ? '🎉 Meta atingida essa semana!'
                             : `Faltam ${currency} ${(savingTarget - saved).toFixed(2)} para sua meta`}
                     </Text>
                 </View>
 
+                {/* Gráfico */}
                 {pieData.length > 0 && (
                     <View style={styles.chartCard}>
                         <Text style={styles.chartTitle}>Gastos por categoria</Text>
@@ -151,7 +153,7 @@ export default function DashboardScreen() {
 
                 {pieData.length === 0 && (
                     <View style={styles.emptyChart}>
-                        <Text style={styles.emptyText}>Nenhum gasto registrado esse mês</Text>
+                        <Text style={styles.emptyText}>Nenhum gasto essa semana</Text>
                         <Text style={styles.emptyHint}>Adicione seus lançamentos na aba "Adicionar"</Text>
                     </View>
                 )}
@@ -168,9 +170,9 @@ const styles = StyleSheet.create({
     header: { paddingTop: 20, paddingBottom: 8 },
     headerTitle: { fontSize: 24, fontWeight: 'bold', color: COLORS.text },
     headerSub: { fontSize: 14, color: COLORS.textSecondary, marginTop: 2 },
-    monthNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginVertical: 16, gap: 20 },
-    monthBtn: { padding: 8, backgroundColor: COLORS.card, borderRadius: 8 },
-    monthText: { fontSize: 16, fontWeight: '600', color: COLORS.text, minWidth: 100, textAlign: 'center' },
+    weekNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginVertical: 16, gap: 12 },
+    weekBtn: { padding: 8, backgroundColor: COLORS.card, borderRadius: 8 },
+    weekText: { fontSize: 14, fontWeight: '600', color: COLORS.text, textAlign: 'center', flex: 1 },
     cardsRow: { flexDirection: 'row', gap: 12, marginBottom: 12 },
     card: { flex: 1, backgroundColor: COLORS.card, borderRadius: 12, padding: 16, borderLeftWidth: 3, borderColor: COLORS.cardBorder },
     cardLabel: { fontSize: 12, color: COLORS.textSecondary, marginBottom: 6 },

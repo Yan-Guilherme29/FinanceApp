@@ -1,12 +1,12 @@
 import { useState, useCallback } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity,
-    SafeAreaView, ScrollView, Alert, Modal, TextInput, FlatList
+    SafeAreaView, ScrollView, Alert, Modal, TextInput
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import useStore from '../store/useStore';
-import { getBudgets, setBudget, deleteBudget, getExpensesByCategory, getCustomCategories } from '../database/database';
+import { getBudgets, setBudget, deleteBudget, getExpensesByCategory, getCustomCategories, getWeekLabel } from '../database/database';
 
 const COLORS = {
     primary: '#6C63FF',
@@ -35,7 +35,7 @@ const DEFAULT_CATEGORIES = [
 ];
 
 export default function BudgetScreen() {
-    const { currentYear, currentMonth, currency } = useStore();
+    const { currentWeekStart, currency, prevWeek, nextWeek } = useStore();
     const [budgets, setBudgetsState] = useState({});
     const [spentByCategory, setSpentByCategory] = useState({});
     const [allCategories, setAllCategories] = useState(DEFAULT_CATEGORIES);
@@ -46,21 +46,19 @@ export default function BudgetScreen() {
     useFocusEffect(
         useCallback(() => {
             loadData();
-        }, [currentYear, currentMonth])
+        }, [currentWeekStart])
     );
 
     const loadData = async () => {
         const [b, spent, custom] = await Promise.all([
             getBudgets(),
-            getExpensesByCategory(currentYear, currentMonth),
+            getExpensesByCategory(currentWeekStart),
             getCustomCategories(),
         ]);
         setBudgetsState(b);
-
         const spentMap = {};
         spent.forEach(s => { spentMap[s.category] = s.total; });
         setSpentByCategory(spentMap);
-
         const customCats = custom.expense.map(c => ({ name: c.name, emoji: c.emoji }));
         setAllCategories([...DEFAULT_CATEGORIES, ...customCats]);
     };
@@ -88,26 +86,27 @@ export default function BudgetScreen() {
             `Quer remover o orçamento de "${categoryName}"?`,
             [
                 { text: 'Cancelar', style: 'cancel' },
-                {
-                    text: 'Remover',
-                    style: 'destructive',
-                    onPress: async () => {
-                        await deleteBudget(categoryName);
-                        await loadData();
-                    },
-                },
+                { text: 'Remover', style: 'destructive', onPress: async () => { await deleteBudget(categoryName); await loadData(); } },
             ]
         );
     };
 
-    // Separa categorias com orçamento das sem orçamento
     const withBudget = allCategories.filter(c => budgets[c.name] !== undefined);
     const withoutBudget = allCategories.filter(c => budgets[c.name] === undefined);
 
-    // Total orçado vs total gasto
     const totalBudget = Object.values(budgets).reduce((s, v) => s + v, 0);
     const totalSpent = withBudget.reduce((s, c) => s + (spentByCategory[c.name] || 0), 0);
     const totalRemaining = totalBudget - totalSpent;
+
+    const isCurrentWeek = () => {
+        const now = new Date();
+        const nowDay = now.getDay();
+        const diff = nowDay === 0 ? -6 : 1 - nowDay;
+        const currentMonday = new Date(now);
+        currentMonday.setDate(now.getDate() + diff);
+        currentMonday.setHours(0, 0, 0, 0);
+        return new Date(currentWeekStart).toDateString() === currentMonday.toDateString();
+    };
 
     const renderBudgetItem = (cat) => {
         const budget = budgets[cat.name] || 0;
@@ -116,7 +115,6 @@ export default function BudgetScreen() {
         const progress = budget > 0 ? Math.min((spent / budget) * 100, 100) : 0;
         const isOver = spent > budget;
         const isWarning = !isOver && progress >= 80;
-
         const barColor = isOver ? COLORS.expense : isWarning ? COLORS.warning : COLORS.primary;
 
         return (
@@ -127,7 +125,7 @@ export default function BudgetScreen() {
                         <View>
                             <Text style={styles.budgetName}>{cat.name}</Text>
                             <Text style={styles.budgetSub}>
-                                Gasto: {currency} {spent.toFixed(2)} / {currency} {budget.toFixed(2)}
+                                {currency} {spent.toFixed(2)} / {currency} {budget.toFixed(2)}
                             </Text>
                         </View>
                     </View>
@@ -138,21 +136,11 @@ export default function BudgetScreen() {
                         <Text style={styles.budgetRemainingLabel}>{isOver ? 'excedido' : 'restante'}</Text>
                     </View>
                 </View>
-
-                {/* Barra de progresso */}
                 <View style={styles.progressBar}>
                     <View style={[styles.progressFill, { width: `${progress}%`, backgroundColor: barColor }]} />
                 </View>
-
-                {/* Alertas */}
-                {isOver && (
-                    <Text style={styles.alertText}>🚨 Orçamento excedido em {currency} {Math.abs(remaining).toFixed(2)}</Text>
-                )}
-                {isWarning && (
-                    <Text style={[styles.alertText, { color: COLORS.warning }]}>⚠️ Atenção! Você usou {progress.toFixed(0)}% do orçamento</Text>
-                )}
-
-                {/* Ações */}
+                {isOver && <Text style={styles.alertText}>🚨 Excedido em {currency} {Math.abs(remaining).toFixed(2)}</Text>}
+                {isWarning && <Text style={[styles.alertText, { color: COLORS.warning }]}>⚠️ {progress.toFixed(0)}% do orçamento usado</Text>}
                 <View style={styles.budgetActions}>
                     <TouchableOpacity style={styles.editBtn} onPress={() => openModal(cat)}>
                         <Ionicons name="pencil-outline" size={14} color={COLORS.primary} />
@@ -171,23 +159,36 @@ export default function BudgetScreen() {
         <SafeAreaView style={styles.safe}>
             <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
 
-                {/* Header */}
                 <View style={styles.header}>
                     <Text style={styles.headerTitle}>💼 Orçamento</Text>
-                    <Text style={styles.headerSub}>Controle quanto pode gastar por categoria</Text>
                 </View>
 
-                {/* Resumo total */}
+                {/* Navegação de semana */}
+                <View style={styles.weekNav}>
+                    <TouchableOpacity onPress={prevWeek} style={styles.weekBtn}>
+                        <Ionicons name="chevron-back" size={20} color={COLORS.primary} />
+                    </TouchableOpacity>
+                    <Text style={styles.weekText}>{getWeekLabel(currentWeekStart)}</Text>
+                    <TouchableOpacity
+                        onPress={nextWeek}
+                        style={[styles.weekBtn, isCurrentWeek() && { opacity: 0.3 }]}
+                        disabled={isCurrentWeek()}
+                    >
+                        <Ionicons name="chevron-forward" size={20} color={COLORS.primary} />
+                    </TouchableOpacity>
+                </View>
+
+                {/* Resumo */}
                 {withBudget.length > 0 && (
                     <View style={styles.summaryCard}>
                         <View style={styles.summaryRow}>
                             <View style={styles.summaryItem}>
-                                <Text style={styles.summaryLabel}>Total orçado</Text>
+                                <Text style={styles.summaryLabel}>Orçado</Text>
                                 <Text style={styles.summaryValue}>{currency} {totalBudget.toFixed(2)}</Text>
                             </View>
                             <View style={styles.summaryDivider} />
                             <View style={styles.summaryItem}>
-                                <Text style={styles.summaryLabel}>Já gastou</Text>
+                                <Text style={styles.summaryLabel}>Gasto</Text>
                                 <Text style={[styles.summaryValue, { color: COLORS.expense }]}>{currency} {totalSpent.toFixed(2)}</Text>
                             </View>
                             <View style={styles.summaryDivider} />
@@ -201,7 +202,6 @@ export default function BudgetScreen() {
                     </View>
                 )}
 
-                {/* Categorias com orçamento */}
                 {withBudget.length > 0 && (
                     <View style={styles.section}>
                         <Text style={styles.sectionTitle}>Orçamentos ativos</Text>
@@ -209,23 +209,18 @@ export default function BudgetScreen() {
                     </View>
                 )}
 
-                {/* Categorias sem orçamento */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>
                         {withBudget.length === 0 ? 'Defina orçamentos por categoria' : 'Adicionar orçamento'}
                     </Text>
                     {withBudget.length === 0 && (
                         <Text style={styles.emptyHint}>
-                            Toque em uma categoria para definir quanto pode gastar nela esse mês.
+                            Toque em uma categoria para definir quanto pode gastar nela por semana.
                         </Text>
                     )}
                     <View style={styles.categoriesGrid}>
                         {withoutBudget.map(cat => (
-                            <TouchableOpacity
-                                key={cat.name}
-                                style={styles.categoryChip}
-                                onPress={() => openModal(cat)}
-                            >
+                            <TouchableOpacity key={cat.name} style={styles.categoryChip} onPress={() => openModal(cat)}>
                                 <Text style={styles.categoryChipText}>{cat.emoji} {cat.name}</Text>
                                 <Ionicons name="add-circle-outline" size={16} color={COLORS.primary} />
                             </TouchableOpacity>
@@ -236,17 +231,11 @@ export default function BudgetScreen() {
                 <View style={{ height: 40 }} />
             </ScrollView>
 
-            {/* Modal definir orçamento */}
             <Modal visible={modalVisible} transparent animationType="slide">
                 <View style={styles.modalOverlay}>
                     <View style={styles.modalBox}>
-                        <Text style={styles.modalTitle}>
-                            {selectedCategory?.emoji} {selectedCategory?.name}
-                        </Text>
-                        <Text style={styles.modalSubtitle}>
-                            Quanto pode gastar com isso esse mês?
-                        </Text>
-
+                        <Text style={styles.modalTitle}>{selectedCategory?.emoji} {selectedCategory?.name}</Text>
+                        <Text style={styles.modalSubtitle}>Quanto pode gastar por semana?</Text>
                         <View style={styles.modalCurrencyRow}>
                             <Text style={styles.modalCurrency}>{currency}</Text>
                             <TextInput
@@ -259,12 +248,8 @@ export default function BudgetScreen() {
                                 autoFocus
                             />
                         </View>
-
                         <View style={styles.modalButtons}>
-                            <TouchableOpacity
-                                style={styles.modalCancelBtn}
-                                onPress={() => setModalVisible(false)}
-                            >
+                            <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setModalVisible(false)}>
                                 <Text style={styles.modalCancelText}>Cancelar</Text>
                             </TouchableOpacity>
                             <TouchableOpacity style={styles.modalSaveBtn} onPress={handleSaveBudget}>
@@ -281,15 +266,17 @@ export default function BudgetScreen() {
 const styles = StyleSheet.create({
     safe: { flex: 1, backgroundColor: '#0F0F1A' },
     container: { flex: 1, backgroundColor: COLORS.background, paddingHorizontal: 16 },
-    header: { paddingTop: 20, paddingBottom: 12 },
+    header: { paddingTop: 20, paddingBottom: 8 },
     headerTitle: { fontSize: 24, fontWeight: 'bold', color: COLORS.text },
-    headerSub: { fontSize: 13, color: COLORS.textSecondary, marginTop: 2 },
+    weekNav: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginVertical: 12, gap: 12 },
+    weekBtn: { padding: 8, backgroundColor: COLORS.card, borderRadius: 8 },
+    weekText: { fontSize: 14, fontWeight: '600', color: COLORS.text, textAlign: 'center', flex: 1 },
     summaryCard: { backgroundColor: COLORS.card, borderRadius: 14, padding: 16, marginBottom: 8, borderWidth: 1, borderColor: COLORS.cardBorder },
     summaryRow: { flexDirection: 'row', alignItems: 'center' },
     summaryItem: { flex: 1, alignItems: 'center' },
     summaryDivider: { width: 1, height: 36, backgroundColor: COLORS.cardBorder },
     summaryLabel: { fontSize: 11, color: COLORS.textSecondary, marginBottom: 4 },
-    summaryValue: { fontSize: 15, fontWeight: 'bold', color: COLORS.text },
+    summaryValue: { fontSize: 14, fontWeight: 'bold', color: COLORS.text },
     section: { marginTop: 20 },
     sectionTitle: { fontSize: 13, fontWeight: '600', color: COLORS.textSecondary, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 12 },
     emptyHint: { fontSize: 14, color: COLORS.textSecondary, marginBottom: 16, lineHeight: 20 },
